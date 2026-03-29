@@ -2,6 +2,8 @@ import random
 import time
 import re
 import random
+import traceback
+import traceback
 from typing import List, Dict, Optional
 from urllib.parse import urljoin, urlparse
 from urllib3.util import Retry
@@ -13,6 +15,7 @@ import logging
 
 import pandas as pd
 import os
+import sys
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -24,11 +27,13 @@ logging.basicConfig(
 BASE = "https://www.topcv.vn"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/123.0.0.0 Safari/537.36"),
+    "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://www.topcv.vn/",
-    # "Connection": "keep-alive",
+    "Connection": "keep-alive",
 }
 
 # Extract text from an element
@@ -129,7 +134,7 @@ def parse_search_page(session, url):
             "job_url": job_url,
             "company": company,
             "company_url": company_url,
-            "salary_list": salary,
+            "salary": salary,
             "address_list": address,
             "exp_list": exp,
         })
@@ -159,9 +164,9 @@ def extract_desc_block(soup):
     data={}
     for el in soup.select(".job-description .job-description__item"):
         title = text(el.select_one("h3")) or ""
-        content = text(el.select_one(".job-description__item--content"))
+        content = el.select_one(".job-description__item--content")
         if content:
-            data[title] = content
+            data[title] = text(content)
     return data
 
 def extract_section_list(soup, title):
@@ -204,13 +209,13 @@ def scrape_job_details(session, job_url):
 
     return {
         "title": title,
-        "salary": salary,
+        "detail_salary": salary,
         "location": location,
         "experience": experience,
         "deadline": deadline,
         "tags": "; ".join(tags) if tags else None,
         "desc_mota": desc_block.get("Mô tả công việc"),
-        "desc_yeucau": desc_block.get("Yêu cầu công việc"),
+        "desc_yeucau": desc_block.get("Yêu cầu ứng viên"),
         "desc_quyenloi": desc_block.get("Quyền lợi"),
         "working_addresses": "; ".join(addrs) if addrs else None,
         "working_times": "; ".join(times) if times else None,
@@ -226,7 +231,6 @@ def scraper_company(session, company_url):
             "company_website": None,
             "company_size": None,
             "company_followers": None,
-            "company_industry": None,
             "company_address": None,
             "company_description": None,
         }
@@ -303,7 +307,7 @@ def crawl_to_dataframe(
                 logger.error(f"Error occurred while scraping job details for {job_url}: {e}")
                 detail = {
                     "title": None,
-                    "salary": None,
+                    "detail_salary": None,
                     "location": None,
                     "experience": None,
                     "deadline": None,
@@ -339,18 +343,32 @@ def crawl_to_dataframe(
     df = pd.DataFrame(rows)
     # Arrange cols
     cols = [
-        "title", "detail_title",
+        "title",
         "job_url",
-        "company", "company_name_full",
-        "company_url", "company_url_from_job",
-        "salary_list", "detail_salary",
-        "address_list", "detail_location",
-        "exp_list", "detail_experience",
-        "deadline", "tags",
-        "working_addresses", "working_times",
-        "desc_mota", "desc_yeucau", "desc_quyenloi",
-        "company_website", "company_size", "company_industry",
-        "company_address", "company_description",
+
+        "company_url",
+
+        "salary",
+        "location",
+        "experience",
+        "deadline",
+
+        "tags",
+
+        "desc_mota",
+        "desc_yeucau",
+        "desc_quyenloi",
+
+        "working_addresses",
+        "working_times",
+
+        "company_name_full",
+        "company_website",
+        "company_size",
+        "company_followers",
+        "company_industry",
+        "company_address",
+        "company_description",
     ]
     cols = [c for c in cols if c in df.columns]
     return df.loc[:, cols] if cols else df
@@ -372,14 +390,16 @@ def main():
     try:
         df = crawl_to_dataframe(query_template, start_page, end_page)
     except Exception:
-        logger.exception("Crawler failed")
-        return 
+        logger.error("Crawler failed")
+        logger.error(traceback.format_exc())
+        sys.exit(1) 
 
     if df.empty:
         logger.warning("No data collected. Stop")
         return
     logger.info(f"Total jobs collected: {len(df)}")
-    output_dir = "./data"
+    project_dir = os.environ.get("PROJECT_DIR", "/opt/project")
+    output_dir = f"{project_dir}/data/raw"
     os.makedirs(output_dir, exist_ok = True)
     today = datetime.today().strftime("%Y%m%d")
 
