@@ -1,0 +1,8 @@
+requests==2.31.0
+beautifulsoup4==4.12.3
+pandas==2.2.1
+SQLAlchemy==2.0.28
+psycopg2-binary==2.9.9
+lxml==5.1.0
+dbt-postgres==1.7.9
+protobuf==4.25.3
