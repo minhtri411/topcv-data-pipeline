@@ -1,0 +1,23 @@
+name: 'topcv_transform'
+version: '1.0.0'
+config-version: 2
+
+profile: 'topcv_dbt'
+
+model-paths: ["models"]
+seed-paths: ["seed"]
+macro-paths: ["macro"]
+
+models:
+  topcv_transform:
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+    marts:
+      +schema: mart
+      +materialized: table # Dashboard query
+
+packages-install-path: /tmp/dbt_packages

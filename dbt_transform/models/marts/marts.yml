@@ -1,0 +1,160 @@
+version: 2
+
+models:
+
+  # FACT TABLE
+  - name: fct_jobs
+    description: "Fact table containing standardized job data for analytics"
+
+    config:
+      contract:
+        enforced: true
+
+    columns:
+      # PRIMARY KEY (logical)
+      - name: job_id
+        description: "Primary key of the job"
+        data_type: varchar
+        tests:
+          - unique
+          - not_null
+
+      # FOREIGN KEYS
+      - name: company_id
+        description: "Foreign key referencing dim_company"
+        data_type: varchar
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_company')
+              field: company_id
+
+      - name: location_id
+        description: "Foreign key referencing dim_location"
+        data_type: varchar
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_location')
+              field: location_id
+
+      - name: date_id
+        description: "Foreign key referencing dim_date"
+        data_type: integer
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_id
+
+      # TEXT 
+      - name: job_title
+        description: "Title of the job"
+        data_type: varchar
+
+      # MEASURES
+      - name: salary_min
+        description: "Minimum salary (VND)"
+        data_type: numeric(15,2)
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+
+      - name: salary_max
+        description: "Maximum salary (VND)"
+        data_type: numeric(15,2)
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+
+      - name: avg_salary
+        description: "Average salary"
+        data_type: numeric(15,2)
+
+      - name: currency
+        description: "Salary currency"
+        data_type: varchar
+        tests:
+          - accepted_values:
+              values: ['VND', 'USD', 'UNKNOWN']
+
+      # METADATA
+      - name: crawled_at
+        description: "Timestamp when the job data was crawled"
+        data_type: timestamp
+        tests:
+          - not_null
+
+      - name: hash_diff
+        description: "Hash for change data capture"
+        data_type: varchar
+
+
+  # DIM COMPANY
+  - name: dim_company
+    description: "Dimension table containing company information"
+
+    columns:
+      - name: company_id
+        description: "Primary key of company"
+        data_type: varchar
+        tests:
+          - unique
+          - not_null
+
+      - name: company_name
+        description: "Company name"
+        data_type: varchar
+
+      - name: company_industry
+        description: "Industry of the company"
+        data_type: varchar
+
+
+  # DIM LOCATION
+  - name: dim_location
+    description: "Dimension table containing location information"
+
+    columns:
+      - name: location_id
+        description: "Primary key of location"
+        data_type: varchar
+        tests:
+          - unique
+          - not_null
+
+      - name: location_name
+        description: "Normalized location name"
+        data_type: varchar
+
+
+  # DIM JOB DETAILS
+  - name: dim_job_details
+    description: "Detailed job information (long text fields for drill-through)"
+
+    columns:
+      - name: job_id
+        description: "Foreign key to fact_jobs"
+        data_type: varchar
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: ref('fct_jobs')
+              field: job_id
+
+  # DIM DATE
+  - name: dim_date
+    description: "Date dimension table"
+
+    columns:
+      - name: date_id
+        description: "Date key in YYYYMMDD format"
+        data_type: integer
+        tests:
+          - unique
+          - not_null
+
+      - name: date_day
+        description: "Actual date"
+        data_type: date

@@ -1,0 +1,22 @@
+version: 2
+
+sources:
+  - name: topcv_raw
+    database: topcv_dw
+    schema: raw
+    description: "Raw data layer containing scraped job postings from TopCV"
+
+    tables:
+      - name: topcv_jobs
+        description: "Raw job postings scraped from TopCV"
+
+        columns:
+          - name: job_url
+            description: "Unique URL of the job posting"
+            tests:
+              - not_null
+              
+          - name: crawled_at
+            description: "Timestamp when the job was scraped"
+            tests:
+              - not_null

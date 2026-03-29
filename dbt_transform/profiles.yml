@@ -1,0 +1,12 @@
+topcv_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: postgres        # tên service trong docker-compose
+      user: postgres
+      password: postgres
+      port: 5432
+      dbname: topcv_dw
+      schema: raw
+      threads: 2
