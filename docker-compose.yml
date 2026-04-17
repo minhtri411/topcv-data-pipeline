@@ -2,14 +2,27 @@ x-airflow-common: &airflow-common
   build:
     context: .
     dockerfile: Dockerfile.airflow
+  env_file:
+    - .env
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/airflow
-    AIRFLOW__CORE__DAGS_FOLDER: /opt/project/dags
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@${AIRFLOW_DB_HOST}:${AIRFLOW_DB_PORT}/${AIRFLOW_DB_NAME}
+    AIRFLOW__CORE__DAGS_FOLDER: ${PROJECT_DIR}/dags
     AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
-    AIRFLOW__WEBSERVER__SECRET_KEY: 'topcv_secret_key_123456'
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY}
+    DB_HOST: ${DB_HOST}
+    DB_PORT: ${DB_PORT}
+    DB_USER: ${DB_USER}
+    DB_PASSWORD: ${DB_PASSWORD}
+    DB_NAME: ${DB_NAME}
+    DB_SCHEMA: ${DB_SCHEMA}
+    PROJECT_DIR: ${PROJECT_DIR}
+    PYTHON_BIN: ${PYTHON_BIN}
+    DBT_PROJECT_DIR: ${DBT_PROJECT_DIR}
+    DBT_PROFILES_DIR: ${DBT_PROFILES_DIR}
+    DBT_THREADS: ${DBT_THREADS}
   volumes:
-    - ./:/opt/project
+    - ./:${PROJECT_DIR}
   depends_on:
     - postgres
 
@@ -17,12 +30,14 @@ services:
   postgres:
     image: postgres:15
     container_name: topcv_postgres
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: topcv_dw
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_EXPOSE_PORT}:5432"
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
       - postgres_data:/var/lib/postgresql/data
@@ -30,8 +45,18 @@ services:
   etl_python:
     build: .
     container_name: topcv_python_env
+    env_file:
+      - .env
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DB_SCHEMA: ${DB_SCHEMA}
+      PROJECT_DIR: ${PROJECT_DIR}
     volumes:
-      - ./:/app
+      - ./:${PROJECT_DIR}
     depends_on:
       - postgres
     command: tail -f /dev/null
@@ -43,10 +68,10 @@ services:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: 'true'
       _AIRFLOW_WWW_USER_CREATE: 'true'
-      _AIRFLOW_WWW_USER_USERNAME: admin
-      _AIRFLOW_WWW_USER_PASSWORD: admin
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
       _AIRFLOW_WWW_USER_ROLE: Admin
-      _AIRFLOW_WWW_USER_EMAIL: admin@example.com
+      _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
     command: version
 
   airflow-webserver:
@@ -68,5 +93,23 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  metabase:
+    image: metabase/metabase:latest
+    container_name: topcv_metabase
+    env_file:
+      - .env
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+      MB_JETTY_PORT: 3000
+    ports:
+      - "${METABASE_EXPOSE_PORT:-3000}:3000"
+    volumes:
+      - metabase_data:/metabase-data
+    depends_on:
+      - postgres
+
+  
+
 volumes:
   postgres_data:
+  metabase_data:

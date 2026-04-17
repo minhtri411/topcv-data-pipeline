@@ -1,0 +1,36 @@
+version: 2
+
+snapshots:
+  - name: snap_dim_company
+    description: "SCD2 snapshot for company attributes"
+    columns:
+      - name: company_bk
+        description: "Company business key"
+        tests:
+          - not_null
+      - name: dbt_scd_id
+        description: "dbt-generated SCD row id"
+        tests:
+          - unique
+          - not_null
+      - name: dbt_valid_from
+        description: "Snapshot validity start"
+        tests:
+          - not_null
+
+  - name: snap_dim_job
+    description: "SCD2 snapshot for job attributes"
+    columns:
+      - name: job_bk
+        description: "Job business key"
+        tests:
+          - not_null
+      - name: dbt_scd_id
+        description: "dbt-generated SCD row id"
+        tests:
+          - unique
+          - not_null
+      - name: dbt_valid_from
+        description: "Snapshot validity start"
+        tests:
+          - not_null

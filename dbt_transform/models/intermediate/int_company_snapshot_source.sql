@@ -1,6 +1,5 @@
-with snap as (
+with ranked as (
     select
-        dbt_scd_id,
         company_bk,
         company_url,
         company_name_full,
@@ -10,23 +9,25 @@ with snap as (
         company_industry,
         company_address,
         company_description,
-        dbt_valid_from,
-        dbt_valid_to
-    from {{ ref('snap_dim_company') }}
+        snapshot_ts,
+        row_number() over (
+            partition by company_bk
+            order by snapshot_ts desc
+        ) as rn
+    from {{ ref('stg_topcv_jobs') }}
+    where company_bk is not null
 )
 
 select
-    row_number() over (order by company_bk, dbt_valid_from)::bigint as company_sk,
-    dbt_scd_id,
-    company_bk as company_id,
-    company_name_full,
+    company_bk,
     company_url,
+    company_name_full,
     company_website,
     company_size,
     company_followers,
     company_industry,
     company_address,
     company_description,
-    dbt_valid_from,
-    dbt_valid_to
-from snap
+    snapshot_ts as updated_at
+from ranked
+where rn = 1

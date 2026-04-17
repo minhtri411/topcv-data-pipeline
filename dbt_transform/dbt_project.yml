@@ -5,8 +5,9 @@ config-version: 2
 profile: 'topcv_dbt'
 
 model-paths: ["models"]
+snapshot-paths: ["snapshots"]
 seed-paths: ["seed"]
-macro-paths: ["macro"]
+macro-paths: ["macros"]
 
 models:
   topcv_transform:

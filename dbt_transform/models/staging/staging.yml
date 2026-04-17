@@ -1,0 +1,45 @@
+version: 2
+
+models:
+  - name: stg_topcv_jobs
+    description: "Staging view for TopCV snapshots with normalized keys, snake_case columns, and typed salary fields"
+    tests:
+      - unique_combination_of_columns:
+          combination_of_columns:
+            - job_bk
+            - snapshot_ts
+
+    columns:
+      - name: job_bk
+        description: "Business key of job generated from normalized job_url"
+        tests:
+          - not_null
+
+      - name: company_bk
+        description: "Business key of company generated from company_url/name/website"
+        tests:
+          - not_null
+
+      - name: job_url
+        description: "Normalized job URL"
+        tests:
+          - not_null
+
+      - name: snapshot_ts
+        description: "Snapshot timestamp from crawled_at"
+        tests:
+          - not_null
+
+      - name: title
+        description: "Job title"
+
+      - name: salary_min
+        description: "Parsed salary min in VND, numeric(14,2)"
+
+      - name: salary_max
+        description: "Parsed salary max in VND, numeric(14,2)"
+
+      - name: source_id
+        description: "Source identifier, 1 = TopCV"
+        tests:
+          - not_null

@@ -2,9 +2,18 @@ version: 2
 
 sources:
   - name: topcv_raw
-    database: topcv_dw
-    schema: raw
+    database: "{{ env_var('DB_NAME') }}"
+    schema: "{{ env_var('DB_SCHEMA') }}"
     description: "Raw data layer containing scraped job postings from TopCV"
+    loaded_at_field: crawled_at
+
+    freshness:
+      warn_after:
+        count: 25
+        period: hour
+      error_after:
+        count: 48
+        period: hour
 
     tables:
       - name: topcv_jobs
@@ -12,7 +21,7 @@ sources:
 
         columns:
           - name: job_url
-            description: "Unique URL of the job posting"
+            description: "Job posting URL from source; may repeat across snapshots"
             tests:
               - not_null
               

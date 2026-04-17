@@ -1,4 +1,11 @@
 FROM apache/airflow:2.8.1
 USER airflow
 RUN pip install --upgrade pip
-RUN pip install --default-timeout=1000 --no-cache-dir dbt-postgres==1.7.9 requests beautifulsoup4 pandas
+RUN pip install --default-timeout=1000 --no-cache-dir \
+	dbt-postgres==1.7.9 \
+	requests==2.31.0 \
+	beautifulsoup4==4.12.3 \
+	pandas==2.0.3 \
+	lxml==5.1.0 \
+	psycopg2-binary==2.9.9 \
+	curl_cffi==0.9.0
