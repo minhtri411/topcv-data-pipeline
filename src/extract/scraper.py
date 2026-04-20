@@ -18,8 +18,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 BASE = "https://www.topcv.vn"
 DEFAULT_IMPERSONATE = "chrome120"
-REQUEST_TIMEOUT_SECONDS = 20
-MAX_RETRIES = 5
+REQUEST_TIMEOUT_SECONDS = 15
+MAX_RETRIES = 2
 
 JOB_DETAIL_PATH_PATTERNS = [
     re.compile(r"^/viec-lam/.+?/\d+\.html$"),
