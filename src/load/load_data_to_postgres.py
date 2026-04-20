@@ -34,20 +34,6 @@ def _get_required_env(name: str) -> str:
 
 
 def get_db_config():
-    """
-    Lấy cấu hình database từ environment variables
-    Fallback to defaults chỉ cho development
-    
-    Environment variables:
-    - DB_HOST: PostgreSQL host (default: postgres)
-    - DB_PORT: PostgreSQL port (default: 5432)
-    - DB_USER: Database user (default: postgres)
-    - DB_PASSWORD: Database password (default: postgres)
-    - DB_NAME: Database name (default: topcv_dw)
-    - DB_SCHEMA: Target schema (default: raw)
-    
-    Production: Set all in environment
-    """
     return {
         "host": _get_required_env("DB_HOST"),
         "port": int(_get_required_env("DB_PORT")),
@@ -59,26 +45,6 @@ def get_db_config():
 
 
 def find_csv_file(project_dir: str, execution_date: str = None) -> str:
-    """
-    Tìm CSV file một cách thông minh:
-    
-    Strategy:
-    1. Nếu execution_date provided (từ Airflow): tìm file match ngày đó
-    2. Nếu không: tìm file matching hôm nay
-    3. Fallback: tìm latest file (nhưng log warning)
-    
-    Tại sao tốt hơn os.path.getctime():
-    - ctime có thể sai trên Windows (copy time, not create time)
-    - Execution date từ Airflow là ground truth
-    - Match by filename pattern an toàn hơn
-    
-    Args:
-        project_dir: Project root directory
-        execution_date: Airflow execution date (format YYYYMMDD), or None
-    
-    Returns:
-        Full path to CSV file
-    """
     raw_data_dir = f'{project_dir}/data/raw/'
     
     if not os.path.exists(raw_data_dir):
@@ -116,14 +82,6 @@ def find_csv_file(project_dir: str, execution_date: str = None) -> str:
 
 
 def load_data_with_copy(df: pd.DataFrame, conn, schema: str, table: str, execution_date: str = None) -> int:
-    """
-    Load data using COPY into temp table, then upsert into target table.
-
-    Ưu điểm:
-    - Không cần SELECT DISTINCT toàn bộ job_url từ bảng đích (scale tốt hơn)
-    - Idempotent qua UNIQUE(job_url) + ON CONFLICT
-    - Vẫn dùng COPY để giữ hiệu năng cao
-    """
     target_columns: List[str] = [
         "job_url",
         "title",
@@ -287,14 +245,6 @@ def load_data_with_copy(df: pd.DataFrame, conn, schema: str, table: str, executi
 
 
 def ensure_table_exists(conn, schema: str, table: str):
-    """
-    Tạo table nếu chưa tồn tại
-    
-    Schema match với dbt models:
-    - job_url: UNIQUE (primary identifier)
-    - crawled_at: timestamp (when job was scraped)
-    - Other fields: job details
-    """
     create_table_sql = sql.SQL("""
     CREATE TABLE IF NOT EXISTS {}.{} (
         id BIGSERIAL PRIMARY KEY,
@@ -396,15 +346,6 @@ def ensure_table_exists(conn, schema: str, table: str):
 
 
 def load_data_to_postgres():
-    """
-    Production-grade data loader with:
-    ✓ COPY bulk insert (10-100x faster than to_sql)
-    ✓ Transaction handling (atomic, rollback on error)
-    ✓ Duplicate prevention (ON CONFLICT by job_url)
-    ✓ Environment-based config (no hardcoded credentials)
-    ✓ Smart file selection (by date, not ctime)
-    ✓ Proper error handling and logging
-    """
     
     try:
         db_config = get_db_config()
