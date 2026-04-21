@@ -195,12 +195,12 @@ docker-compose ps
 
 Only supported method: **Docker + Airflow**
 
-1. Open Airflow UI
-2. Enable `topcv_crawler_dag`
-3. Trigger the DAG
-4. Monitor tasks in Graph View
-5. After completion, `topcv_dbt_dag` runs automatically
-6. Check results in Metabase
+1. Open Airflow UI (`http://localhost:8080`)
+2. Enable `topcv_dbt_dag` first.
+3. Enable and Trigger `topcv_crawler_dag`.
+4. Monitor tasks in the Graph/Tree View.
+5. After the crawler completes, `topcv_dbt_dag` will run automatically via TriggerDagRunOperator.
+6. Check final results in Metabase (`http://localhost:3000`).
 
 ---
 
