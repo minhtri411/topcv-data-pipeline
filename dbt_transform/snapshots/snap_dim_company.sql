@@ -2,7 +2,7 @@
 
 {{
     config(
-      target_schema='mart',
+      target_schema='snapshots',
       unique_key='company_bk',
       strategy='timestamp',
       updated_at='updated_at',
