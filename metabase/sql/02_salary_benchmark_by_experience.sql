@@ -1,3 +1,4 @@
+-- Mặt bằng Lương trung bình theo Cấp bậc (Triệu VNĐ)
 WITH latest_date AS (
     SELECT MAX(date_id) as max_date_id FROM raw_mart.fct_job_snapshot
 ),
@@ -16,7 +17,7 @@ clean_data AS (
 )
 SELECT 
     experience AS experience_level,
-    -- Keep for stable custom ordering in Metabase.
+    -- Cột ẩn: Dùng để ép hệ thống xếp đúng thứ tự
     CASE 
         WHEN lower(experience) LIKE '%dưới 1 năm%' THEN 1
         WHEN lower(experience) LIKE '%1 năm%' THEN 2

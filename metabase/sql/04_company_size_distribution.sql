@@ -1,3 +1,4 @@
+-- Phân bố Tin tuyển dụng theo Quy mô Doanh nghiệp
 WITH latest_date AS (
     SELECT MAX(date_id) as max_date_id FROM raw_mart.fct_job_snapshot
 ),
@@ -39,7 +40,7 @@ SELECT
     clean_company_size AS company_size,
     COUNT(DISTINCT job_sk) AS job_count,
     ROUND(100.0 * COUNT(DISTINCT job_sk) / SUM(COUNT(DISTINCT job_sk)) OVER (), 2) AS hiring_share_percent,
-    sort_index -- Keep this hidden field for deterministic ordering.
+    sort_index 
 FROM clean_data
 GROUP BY clean_company_size, sort_index
 ORDER BY sort_index ASC;
