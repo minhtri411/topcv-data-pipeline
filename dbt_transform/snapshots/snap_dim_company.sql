@@ -2,9 +2,17 @@
 
 {{
     config(
-      target_schema='mart',
+      target_schema='snapshots',
       unique_key='company_bk',
-      strategy='timestamp',
+      strategy='check',
+      check_cols=[
+        'company_name_full',
+        'company_website',
+        'company_size',
+        'company_industry',
+        'company_address',
+        'company_description'
+      ],
       updated_at='updated_at',
       invalidate_hard_deletes=True
     )

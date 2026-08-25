@@ -16,6 +16,7 @@ x-airflow-common: &airflow-common
     DB_PASSWORD: ${DB_PASSWORD}
     DB_NAME: ${DB_NAME}
     DB_SCHEMA: ${DB_SCHEMA}
+    PGPASSWORD: ${DB_PASSWORD}
     PROJECT_DIR: ${PROJECT_DIR}
     PYTHON_BIN: ${PYTHON_BIN}
     DBT_PROJECT_DIR: ${DBT_PROJECT_DIR}
@@ -23,6 +24,7 @@ x-airflow-common: &airflow-common
     DBT_THREADS: ${DBT_THREADS}
   volumes:
     - ./:${PROJECT_DIR}
+    - ./backup:/backup
   depends_on:
     - postgres
 
@@ -41,25 +43,6 @@ services:
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
       - postgres_data:/var/lib/postgresql/data
-
-  etl_python:
-    build: .
-    container_name: topcv_python_env
-    env_file:
-      - .env
-    environment:
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_NAME: ${DB_NAME}
-      DB_SCHEMA: ${DB_SCHEMA}
-      PROJECT_DIR: ${PROJECT_DIR}
-    volumes:
-      - ./:${PROJECT_DIR}
-    depends_on:
-      - postgres
-    command: tail -f /dev/null
 
   airflow-init:
     <<: *airflow-common
@@ -94,7 +77,7 @@ services:
         condition: service_completed_successfully
 
   metabase:
-    image: metabase/metabase:latest
+    image: metabase/metabase:v0.50.8
     container_name: topcv_metabase
     env_file:
       - .env

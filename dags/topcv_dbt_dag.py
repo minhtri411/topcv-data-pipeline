@@ -77,11 +77,19 @@ with DAG(
         task_id="dbt_snapshots",
         bash_command=f"""
         set -e
+
         echo "[INFO] Executing snapshots..."
         cd {DBT_PROJECT_DIR}
+
         dbt snapshot \
-          --profiles-dir {DBT_PROFILES_DIR} \
-          --target-path /tmp/dbt_target
+        --profiles-dir {DBT_PROFILES_DIR} \
+        --target-path /tmp/dbt_target
+
+        echo "[INFO] Testing snapshots..."
+        dbt test \
+        --select path:snapshots \
+        --profiles-dir {DBT_PROFILES_DIR} \
+        --target-path /tmp/dbt_target
         """,
         execution_timeout=timedelta(minutes=15),
     )
@@ -101,6 +109,16 @@ with DAG(
         execution_timeout=timedelta(minutes=30),
     )
 
+    backup_postgres = BashOperator(
+        task_id="backup_postgres",
+        bash_command=f"""
+        set -e
+        echo "[INFO] Backing up PostgreSQL..."
+        {PROJECT_DIR}/scripts/backup_postgres.sh
+        """,
+        execution_timeout=timedelta(minutes=30),
+    )
+
     setup_metabase = BashOperator(
         task_id="setup_metabase",
         bash_command=f"""
@@ -113,4 +131,4 @@ with DAG(
         execution_timeout=timedelta(minutes=15),
     )
 
-    dbt_source_freshness >> dbt_staging >> dbt_snapshots >> dbt_mart >> setup_metabase
+    dbt_source_freshness >> dbt_staging >> dbt_snapshots >> dbt_mart >> backup_postgres >> setup_metabase

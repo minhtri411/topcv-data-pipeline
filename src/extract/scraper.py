@@ -11,342 +11,17 @@ from urllib.parse import urljoin, urlparse
 
 import pandas as pd
 from bs4 import BeautifulSoup
-from curl_cffi import requests
+
+from config import BASE, BASE_COLUMNS, JOB_DETAIL_PATH_PATTERNS, SEARCH_FIELD_MAP, _get_required_env, _resolve_project_dir
+from extractors import _normalize_job_title, _normalize_topcv_url, apply_map, scrape_company, scrape_job_detail, text
+from http_client import build_session, get_html, smart_sleep, warmup_session
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-BASE = "https://www.topcv.vn"
-DEFAULT_IMPERSONATE = "chrome120"
-REQUEST_TIMEOUT_SECONDS = 15
-MAX_RETRIES = 2
-
-JOB_DETAIL_PATH_PATTERNS = [
-    re.compile(r"^/viec-lam/.+?/\d+\.html$"),
-    re.compile(r"^/brand/.+?/tuyen-dung/.+-j\d+\.html$"),
-]
-
-SEARCH_FIELD_MAP: Dict[str, List[str]] = {
-    "title": [
-        "h3.title a[href]",
-        "a.job-item__title[href]",
-        "a[href*='/viec-lam/']",
-        "a[href*='/brand/'][href*='-j']",
-    ],
-    "salary": [
-        "label.title-salary",
-        ".title-salary",
-        "[class*='salary']",
-    ],
-    "address_list": [
-        "label.address .city-text",
-        ".address .city-text",
-        "[class*='location']",
-        "[class*='address']",
-    ],
-    "exp_list": [
-        "label.exp span",
-        ".exp span",
-        "[class*='experience']",
-        "[class*='exp']",
-    ],
-    "company": [
-        "a.company .company-name",
-        "a.company",
-        "[class*='company-name']",
-    ],
-    "company_url": [
-        "a.company[href]::attr(href)",
-        "a[href*='/cong-ty/']::attr(href)",
-    ],
-    "job_url": [
-        "h3.title a[href]::attr(href)",
-        "a[href*='/viec-lam/']::attr(href)",
-        "a[href*='/brand/'][href*='-j']::attr(href)",
-    ],
-}
-
-FIELD_MAP: Dict[str, List[str]] = {
-    "title": [
-        ".job-detail__info--title",
-        "h1.job-title",
-        "h1[class*='title']",
-        "h1",
-    ],
-    "salary": [
-        ".job-detail__info--section.section-salary .job-detail__info--section-content-value",
-        ".job-detail__information-detail--actions .salary",
-        ".job-overview [class*='salary']",
-    ],
-    "location": [
-        ".job-detail__info--section.section-location .job-detail__info--section-content-value",
-        ".job-detail__information-detail--actions .location",
-        "[class*='job-location']",
-    ],
-    "experience": [
-        ".job-detail__info--section.section-experience .job-detail__info--section-content-value",
-        "[class*='experience']",
-    ],
-    "deadline": [
-        ".job-detail__info--deadline-date",
-        ".job-detail__info--deadline",
-        ".job-detail__information-detail--actions-label",
-        "[class*='deadline']",
-    ],
-    "tags": [
-        ".job-tags a.item",
-        ".job-tags .item",
-        ".job-detail__info--tags a",
-        "[class*='tag'] a",
-    ],
-    "company_url_from_job": [
-        "a.company[href]::attr(href)",
-        "a[href*='/cong-ty/']::attr(href)",
-    ],
-    "company_name_full": [
-        ".company-name-label .name",
-    ],
-    "company_website": [
-        "a.company-subdetail-info-text[href^='http']::attr(href)",
-        ".company-subdetail-info a[href^='http']::attr(href)",
-    ],
-    "company_size": [
-        ".company-scale .company-value",
-    ],
-    "company_followers": [
-        ".company-subdetail-info:-soup-contains('Người theo dõi') .company-subdetail-info-text",
-        ".info-item:-soup-contains('Người theo dõi') .value",
-    ],
-    "company_industry": [
-        ".company-field .company-value",
-    ],
-    "company_address": [
-        ".company-address .company-value",
-    ],
-    "company_description": [
-        ".content",
-        ".intro-content",
-        ".intro-section .section-body",
-        "div.company-description",
-        "div#company-description",
-        "div.box-intro-company",
-        "div#readmore-company",
-    ],
-}
-
-BASE_COLUMNS = [
-    "title",
-    "job_url",
-    "company_url",
-    "salary",
-    "location",
-    "experience",
-    "deadline",
-    "tags",
-    "desc_mota",
-    "desc_yeucau",
-    "desc_quyenloi",
-    "working_addresses",
-    "working_times",
-    "company_name_full",
-    "company_website",
-    "company_size",
-    "company_followers",
-    "company_industry",
-    "company_address",
-    "crawled_at",
-    "company_description",
-]
-
-LIST_FIELDS = {"tags", "working_addresses", "working_times"}
-
-
-def _get_required_env(name: str) -> str:
-    value = os.getenv(name)
-    if value is None or value.strip() == "":
-        raise ValueError(f"Missing required environment variable: {name}")
-    return value
-
-
-def _resolve_project_dir() -> str:
-    configured = os.getenv("PROJECT_DIR", "").strip()
-
-    if os.getenv("AIRFLOW_CTX_DAG_ID"):
-        project_dir = _get_required_env("PROJECT_DIR")
-        if not os.path.isdir(project_dir):
-            raise ValueError(f"PROJECT_DIR does not exist in Airflow runtime: {project_dir}")
-        return project_dir
-
-    if os.getenv("FORCE_PROJECT_DIR", "").strip().lower() in {"1", "true", "yes"} and configured:
-        return configured
-
-    return os.getcwd()
-
-
-def text(el) -> Optional[str]:
-    if not el:
-        return None
-    value = el.get_text(" ", strip=True)
-    if not value:
-        return None
-    return re.sub(r"\s+", " ", value).strip()
-
-
-def smart_sleep(min_s: float = 1.5, max_s: float = 3.0) -> None:
-    time.sleep(random.uniform(min_s, max_s))
-
-
-def _normalize_job_title(raw_title: Optional[str]) -> Optional[str]:
-    if not raw_title:
-        return None
-    cleaned = re.sub(r"\s+", " ", raw_title).strip()
-    cleaned = cleaned.replace("HOT", "").replace("✨", "").strip()
-    return cleaned or None
-
-
-def _parse_selector(selector: str) -> Tuple[str, Optional[str]]:
-    attr_match = re.search(r"::attr\(([^)]+)\)$", selector)
-    if not attr_match:
-        return selector, None
-    return selector[: selector.rfind("::attr(")], attr_match.group(1).strip()
-
-
-def apply_map(soup: BeautifulSoup, selectors: List[str], multi: bool = False) -> Optional[str]:
-    for selector in selectors:
-        css_selector, attr_name = _parse_selector(selector)
-        try:
-            nodes = soup.select(css_selector)
-        except Exception:
-            continue
-
-        if not nodes:
-            continue
-
-        if multi:
-            values: List[str] = []
-            seen = set()
-            for node in nodes:
-                raw = node.get(attr_name) if attr_name else text(node)
-                if not raw:
-                    continue
-                value = re.sub(r"\s+", " ", str(raw)).strip()
-                if value and value not in seen:
-                    seen.add(value)
-                    values.append(value)
-            if values:
-                return "; ".join(values)
-            continue
-
-        for node in nodes:
-            raw = node.get(attr_name) if attr_name else text(node)
-            if raw:
-                value = re.sub(r"\s+", " ", str(raw)).strip()
-                if value:
-                    return value
-    return None
-
-
-def get_value_by_label(soup: BeautifulSoup, label_texts: List[str]) -> Optional[str]:
-    label_norms = [re.sub(r"\s+", " ", label).strip().lower() for label in label_texts]
-    for section in soup.select(".job-detail__info--section, .job-overview__item, .job-info-item"):
-        title_node = section.select_one(".job-detail__info--section-content-title, .title, .label, h3, h4, strong")
-        value_node = section.select_one(".job-detail__info--section-content-value, .value, .content")
-        title_text = text(title_node)
-        if not title_text:
-            continue
-        normalized_title = re.sub(r"\s+", " ", title_text).strip().lower()
-        if any(label_norm in normalized_title for label_norm in label_norms):
-            value_text = text(value_node)
-            if value_text:
-                return value_text
-            section_text = text(section)
-            if section_text:
-                cleaned = re.sub(rf"^{re.escape(title_text)}\s*[:：-]?\s*", "", section_text, flags=re.I).strip()
-                return cleaned or section_text
-    return apply_map(
-        soup,
-        [
-            *[f".job-detail__info--section:-soup-contains('{label}') .job-detail__info--section-content-value" for label in label_texts],
-            *[f".job-overview__item:-soup-contains('{label}') .value" for label in label_texts],
-            *[f".job-info-item:-soup-contains('{label}') .value" for label in label_texts],
-        ],
-    )
-
-
-def extract_description_sections(soup: BeautifulSoup) -> Dict[str, Optional[str]]:
-    buckets = {
-        "desc_mota": [],
-        "desc_yeucau": [],
-        "desc_quyenloi": [],
-        "working_addresses": [],
-        "working_times": [],
-    }
-
-    for item in soup.select(".job-description__item"):
-        heading = text(item.select_one("h3, h2")) or ""
-        heading_norm = re.sub(r"\s+", " ", heading).strip().lower()
-        content = text(item.select_one(".job-description__item--content")) or text(item)
-        if not content:
-            continue
-        if heading:
-            content = re.sub(rf"^{re.escape(heading)}\s*", "", content, flags=re.I).strip() or content
-
-        if "mô tả" in heading_norm or "mo ta" in heading_norm:
-            buckets["desc_mota"].append(content)
-        elif "yêu cầu" in heading_norm or "yeu cau" in heading_norm:
-            buckets["desc_yeucau"].append(content)
-        elif "quyền lợi" in heading_norm or "quyen loi" in heading_norm or "phúc lợi" in heading_norm or "phuc loi" in heading_norm:
-            buckets["desc_quyenloi"].append(content)
-        elif "địa điểm làm việc" in heading_norm or "dia diem lam viec" in heading_norm:
-            buckets["working_addresses"].append(content)
-        elif "thời gian làm việc" in heading_norm or "thoi gian lam viec" in heading_norm:
-            buckets["working_times"].append(content)
-
-    return {key: "; ".join(values) if values else None for key, values in buckets.items()}
-
-
-def extract_deadline(value: Optional[str]) -> Optional[str]:
-    if not value:
-        return None
-    match = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", value)
-    return match.group(1) if match else value
-
-
-def build_session() -> requests.Session:
-    return requests.Session(impersonate=DEFAULT_IMPERSONATE)
-
-
-def warmup_session(session: requests.Session) -> None:
-    try:
-        session.get(BASE, timeout=REQUEST_TIMEOUT_SECONDS)
-        smart_sleep(0.8, 1.5)
-    except Exception as exc:
-        logger.warning("Warmup failed: %s", str(exc)[:200])
-
-
-def get_html(session: requests.Session, url: str) -> Optional[str]:
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            response = session.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
-            if response.status_code in (403, 429) or "<title>Just a moment...</title>" in response.text:
-                logger.warning("Cloudflare/blocked page at URL: %s (attempt %s)", url, attempt)
-                if attempt == MAX_RETRIES:
-                    return None
-                time.sleep(random.uniform(5, 10))
-                logger.info("Renewing session cookie to bypass Cloudflare...")
-                warmup_session(session)
-                continue
-            response.raise_for_status()
-            return response.text
-        except Exception as exc:
-            logger.warning("Fetch failed at URL: %s (attempt %s): %s", url, attempt, str(exc)[:200])
-            if attempt == MAX_RETRIES:
-                return None
-            time.sleep(random.uniform(5, 10))
-    return None
-
 
 def _is_job_detail_href(href: Optional[str]) -> bool:
+    """Check whether a href matches a known job-detail URL pattern."""
     if not href:
         return False
     parsed = urlparse(href)
@@ -354,7 +29,8 @@ def _is_job_detail_href(href: Optional[str]) -> bool:
     return any(pattern.match(path) for pattern in JOB_DETAIL_PATH_PATTERNS)
 
 
-def parse_search_page(html: str) -> Tuple[List[Dict], bool]:
+def parse_search_page(html: str) -> List[Dict]:
+    """Parse a search-results page HTML into a list of job listing dicts."""
     soup = BeautifulSoup(html, "lxml")
     jobs: List[Dict] = []
 
@@ -379,7 +55,7 @@ def parse_search_page(html: str) -> Tuple[List[Dict], bool]:
         if not _is_job_detail_href(job_url_raw):
             continue
 
-        job_url = urljoin(BASE, job_url_raw)
+        job_url = _normalize_topcv_url(urljoin(BASE, job_url_raw))
         if job_url in seen_urls:
             continue
         seen_urls.add(job_url)
@@ -394,7 +70,7 @@ def parse_search_page(html: str) -> Tuple[List[Dict], bool]:
                 "title": title,
                 "job_url": job_url,
                 "company": apply_map(card, SEARCH_FIELD_MAP["company"]),
-                "company_url": urljoin(BASE, company_url_raw) if company_url_raw else None,
+                "company_url": _normalize_topcv_url(urljoin(BASE, company_url_raw)) if company_url_raw else None,
                 "salary": apply_map(card, SEARCH_FIELD_MAP["salary"]),
                 "address_list": apply_map(card, SEARCH_FIELD_MAP["address_list"]),
                 "exp_list": apply_map(card, SEARCH_FIELD_MAP["exp_list"]),
@@ -406,7 +82,7 @@ def parse_search_page(html: str) -> Tuple[List[Dict], bool]:
             href = anchor.get("href")
             if not _is_job_detail_href(href):
                 continue
-            job_url = urljoin(BASE, href)
+            job_url = _normalize_topcv_url(urljoin(BASE, href))
             if job_url in seen_urls:
                 continue
             title = _normalize_job_title(text(anchor))
@@ -425,179 +101,13 @@ def parse_search_page(html: str) -> Tuple[List[Dict], bool]:
                 }
             )
 
-    has_next = any(
-        soup.select(selector)
-        for selector in [
-            "a[rel='next'][href]",
-            "li.page-item.next a[href]",
-            "a.next-page[href]",
-            "a.pagination-next[href]",
-            "a[aria-label='Next'][href]",
-        ]
-    )
-
-    return jobs, has_next
+    return jobs
 
 
-def scrape_job_detail(session: requests.Session, job_url: str) -> Dict:
-    html = get_html(session, job_url)
-    if not html:
-        return {}
-
-    soup = BeautifulSoup(html, "lxml")
-    detail: Dict[str, Optional[str]] = {
-        "title": apply_map(soup, FIELD_MAP["title"]),
-        "salary": get_value_by_label(soup, ["mức lương", "thu nhập"]),
-        "location": get_value_by_label(soup, ["địa điểm"]),
-        "experience": get_value_by_label(soup, ["kinh nghiệm"]),
-        "deadline": extract_deadline(apply_map(soup, FIELD_MAP["deadline"])),
-        "tags": apply_map(soup, FIELD_MAP["tags"], multi=True),
-        "company_url_from_job": apply_map(soup, FIELD_MAP["company_url_from_job"]),
-        "company_name_full": apply_map(soup, FIELD_MAP["company_name_full"]),
-        "company_website": apply_map(soup, FIELD_MAP["company_website"]),
-        "company_size": apply_map(soup, FIELD_MAP["company_size"]),
-        "company_followers": apply_map(soup, FIELD_MAP["company_followers"]),
-        "company_industry": apply_map(soup, FIELD_MAP["company_industry"]),
-        "company_address": apply_map(soup, FIELD_MAP["company_address"]),
-    }
-
-    sections = extract_description_sections(soup)
-    detail.update(sections)
-
-    detail["title"] = _normalize_job_title(detail.get("title"))
-    return detail
-
-
-def _extract_company_value_from_label_rows(soup: BeautifulSoup, labels: List[str]) -> Optional[str]:
-    label_norms = [re.sub(r"\s+", " ", label).strip().lower() for label in labels]
-    for row in soup.select("li, .row, .item, .info-item, .company-info-item, .dl, .d-flex"):
-        row_text = text(row) or ""
-        strong = row.find(["strong", "b"])
-        if strong:
-            label = text(strong) or ""
-            value = re.sub(re.escape(label), "", row_text, flags=re.I).strip(" :-–—")
-            if any(label_norm in label.lower() for label_norm in label_norms) and value:
-                return value
-            continue
-        m = re.match(r"^([^:：]+)[:：]\s*(.+)$", row_text)
-        if not m:
-            continue
-        label = re.sub(r"\s+", " ", m.group(1)).strip().lower()
-        value = m.group(2).strip()
-        if any(label_norm in label for label_norm in label_norms):
-            return value
-    return None
-
-
-def _is_noise_company_description(value: Optional[str]) -> bool:
-    if not value:
-        return True
-    normalized = re.sub(r"\s+", " ", value).strip().lower()
-    if not normalized:
-        return True
-    noise_markers = [
-        "chia sẻ vị trí",
-        "rất tiếc vì trải nghiệm",
-        "gửi phản hồi",
-        "đâu là yếu tố khiến bạn cảm thấy chưa hài lòng",
-    ]
-    return any(marker in normalized for marker in noise_markers)
-
-
-def scrape_company(session: requests.Session, company_url: Optional[str]) -> Dict:
-    if not company_url:
-        return {
-            "company_name_full": None,
-            "company_website": None,
-            "company_size": None,
-            "company_followers": None,
-            "company_industry": None,
-            "company_address": None,
-            "company_description": None,
-        }
-
-    html = get_html(session, company_url)
-    if not html:
-        return {
-            "company_name_full": None,
-            "company_website": None,
-            "company_size": None,
-            "company_followers": None,
-            "company_industry": None,
-            "company_address": None,
-            "company_description": None,
-        }
-
-    soup = BeautifulSoup(html, "lxml")
-
-    company_name = apply_map(soup, FIELD_MAP["company_name_full"])
-    if not company_name:
-        h1_nodes = soup.select("h1")
-        if len(h1_nodes) == 1:
-            company_name = text(h1_nodes[0])
-        else:
-            company_name = text(soup.select_one("h1.company-name, h1.title, div.company-header h1, div.company-info h1"))
-
-    website = apply_map(soup, FIELD_MAP["company_website"])
-    if website and not str(website).startswith("http"):
-        website = None
-
-    size = apply_map(soup, FIELD_MAP["company_size"])
-    if not size:
-        size = _extract_company_value_from_label_rows(soup, ["quy mô", "nhân viên", "size"])
-
-    followers = apply_map(soup, FIELD_MAP["company_followers"])
-    industry = apply_map(soup, FIELD_MAP["company_industry"])
-    if not industry:
-        industry = _extract_company_value_from_label_rows(soup, ["lĩnh vực", "ngành nghề", "industry"])
-
-    address = apply_map(soup, FIELD_MAP["company_address"])
-    if not address:
-        address = _extract_company_value_from_label_rows(soup, ["địa chỉ", "address"])
-
-    description = apply_map(
-        soup,
-        [
-            "#section-introduce .box-body .content",
-            "#section-introduce .content",
-            "#section-introduce .box-body",
-            "div.company-info #section-introduce .content",
-            *FIELD_MAP["company_description"],
-        ],
-    )
-
-    if not description:
-        for heading in soup.select("#section-introduce h1, #section-introduce h2, #section-introduce h3, .company-info h1, .company-info h2, .company-info h3"):
-            heading_text = (text(heading) or "").lower()
-            if "giới thiệu" not in heading_text and "gioi thieu" not in heading_text:
-                continue
-            section = heading.find_parent("div")
-            while section is not None:
-                candidate = text(section.select_one(".content, .box-body")) or text(section)
-                if candidate:
-                    description = candidate
-                    break
-                section = section.find_parent("div")
-            if description:
-                break
-
-    if _is_noise_company_description(description):
-        description = None
-
-    smart_sleep(1.5, 3.0)
-
-    return {
-        "company_name_full": company_name,
-        "company_website": website,
-        "company_size": size,
-        "company_followers": followers,
-        "company_industry": industry,
-        "company_address": address,
-        "company_description": description,
-    }
 
 
 def _coalesce(*values: Optional[str]) -> Optional[str]:
+    """Return the first non-null, non-empty value from the arguments."""
     for value in values:
         if value is None:
             continue
@@ -608,6 +118,7 @@ def _coalesce(*values: Optional[str]) -> Optional[str]:
 
 
 def _merge_row(base_job: Dict, detail: Dict, company: Dict) -> Dict:
+    """Merge listing + job-detail + company data into one output row."""
     company_url = _coalesce(base_job.get("company_url"), detail.get("company_url_from_job"))
 
     row = {
@@ -647,6 +158,7 @@ def crawl_to_dataframe(
     end_page: int = 1,
     delay_between_pages: Tuple[float, float] = (1.5, 3.0),
 ) -> pd.DataFrame:
+    """Crawl search result pages end-to-end and return the collected rows as a DataFrame."""
     session = build_session()
     warmup_session(session)
 
@@ -659,18 +171,28 @@ def crawl_to_dataframe(
 
         html = get_html(session, url)
         if not html:
-            logger.warning("Page %s has no HTML, stopping", page)
+            logger.warning("Page %s failed, giving listing page one extra attempt after a longer cool-down", page)
+            time.sleep(random.uniform(20, 30))
+            html = get_html(session, url)
+        if not html:
+            logger.warning(
+                "Page %s has no HTML, stopping EARLY (%s/%s configured pages completed, "
+                "%s rows collected so far). Likely persistent Cloudflare block.",
+                page, page - start_page, end_page - start_page + 1, len(rows),
+            )
             break
 
-        jobs, has_next = parse_search_page(html)
+        jobs = parse_search_page(html)
         if not jobs:
             logger.warning("Page %s returned no jobs, stopping", page)
             break
 
         page_rows = []
+        duplicate_count = 0
         for job in jobs:
             job_id = urlparse(job["job_url"]).path
             if job_id in seen_jobs:
+                duplicate_count += 1
                 continue
             seen_jobs.add(job_id)
 
@@ -686,21 +208,25 @@ def crawl_to_dataframe(
                 "company_address": None,
                 "company_description": None,
             }
-            if company_url:
-                smart_sleep(*delay_between_pages)
             row = _merge_row(job, detail, company)
             page_rows.append(row)
             rows.append(row)
 
+        if duplicate_count:
+            logger.info(
+                "Page %s: %s new, %s already seen on an earlier page (listing overlap, not a failure)",
+                page, len(page_rows), duplicate_count,
+            )
         logger.info("Page %s success %s/%s", page, len(page_rows), len(jobs))
         smart_sleep(*delay_between_pages)
 
-        if not has_next and page < end_page:
+        if duplicate_count == len(jobs) and len(jobs) > 0:
             logger.info(
-                "Page %s has no next-link marker, but continuing until configured end_page=%s",
-                page,
-                end_page,
+                "Page %s returned zero new jobs (all %s already seen) -- "
+                "treating as the real end of the listing, stopping early instead of continuing to end_page=%s",
+                page, duplicate_count, end_page,
             )
+            break
 
     if not rows:
         return pd.DataFrame()
@@ -711,6 +237,7 @@ def crawl_to_dataframe(
 
 
 def main() -> None:
+    """CLI/Airflow entrypoint: run the crawl and write the day's CSV to data/raw/."""
     query_template = "https://www.topcv.vn/tim-viec-lam-data?type_keyword=1&page={page}&sba=1"
 
     start_page = int(_get_required_env("SCRAPER_START_PAGE"))

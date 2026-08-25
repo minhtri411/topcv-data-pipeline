@@ -21,14 +21,15 @@ cleaned_locations AS (
             ELSE 'Các tỉnh thành khác' 
         END AS clean_city
     FROM raw_mart.fct_job_snapshot f
-    INNER JOIN raw_mart.dim_location l ON f.location_id = l.location_id
+    INNER JOIN raw_mart.bridge_job_location bl ON f.job_sk = bl.job_sk
+    INNER JOIN raw_mart.dim_location l ON bl.location_id = l.location_id
     CROSS JOIN latest_date
     WHERE f.date_id = latest_date.max_date_id
 )
+-- NOTE: a job can list multiple locations (e.g. "Hồ Chí Minh, Hà Nội")
 SELECT 
-    clean_city AS city,
-    COUNT(DISTINCT job_sk) AS job_count,
-    ROUND(100.0 * COUNT(DISTINCT job_sk) / SUM(COUNT(DISTINCT job_sk)) OVER (), 2) AS market_share_percent
+    clean_city AS "Khu vực",
+    COUNT(DISTINCT job_sk) AS "Số lượng tin"
 FROM cleaned_locations
 GROUP BY clean_city
-ORDER BY job_count DESC;
+ORDER BY COUNT(DISTINCT job_sk) DESC;

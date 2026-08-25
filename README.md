@@ -16,11 +16,11 @@ An ELT pipeline for collecting, processing, and analyzing recruitment data from 
 
 ## 2) Technology Stack
 
-* **Python**: curl_cffi, BeautifulSoup4, pandas, psycopg2
+* **Python**: curl_cffi, BeautifulSoup4, lxml, pandas, psycopg2
 * **PostgreSQL 15**
 * **dbt Core** (dbt-postgres 1.7.9)
 * **Apache Airflow 2.8.1** (LocalExecutor)
-* **Metabase**
+* **Metabase** (v0.50.8)
 * **Docker Compose**
 
 ---
@@ -60,8 +60,8 @@ The data model follows **Dimensional Modeling (Kimball-style Star Schema):**
 * **Central fact table**: `fct_job_snapshot` (job metrics at each snapshot point)
 * **Dimensions**:
   `dim_job`, `dim_company`, `dim_date`, `dim_location`, `dim_source`, `dim_tag`
-* **Bridge table**:
-  `bridge_job_tags` (many-to-many relationship between jobs and tags/skills)
+* **Bridge tables**:
+  `bridge_job_tags`, `bridge_job_location` (many-to-many relationships between jobs and tags/skills, jobs and locations)
 
 ### Layered Modeling Structure
 
@@ -69,6 +69,10 @@ The data model follows **Dimensional Modeling (Kimball-style Star Schema):**
 2. **Intermediate**: clean and separate core entities (job, company, location, tags)
 3. **Snapshots**: track dimension history using SCD Type 2
 4. **Marts**: build fact and dimension tables for BI queries
+
+### dbt Model Lineage (Example: `+fct_job_snapshot`)
+
+![dbt Lineage Graph](img/03_dbt_lineage_fct_job_snapshot.png)
 
 ---
 
@@ -78,7 +82,7 @@ The data model follows **Dimensional Modeling (Kimball-style Star Schema):**
 
 File: `dags/topcv_crawler_dag.py`
 
-![TopCV Crawler DAG](img/03_topcv_crawler_dag.png)
+![TopCV Crawler DAG](img/04_topcv_crawler_dag.png)
 
 * Handles crawling, validating raw data, and loading into PostgreSQL
 * Triggers the dbt DAG upon completion
@@ -89,7 +93,7 @@ File: `dags/topcv_crawler_dag.py`
 
 File: `dags/topcv_dbt_dag.py`
 
-![TopCV dbt DAG](img/04_topcv_dbt_dag.png)
+![TopCV dbt DAG](img/05_topcv_dbt_dag.png)
 
 * Runs dbt steps: freshness, models, snapshots, tests
 * Syncs metadata to Metabase
@@ -101,49 +105,62 @@ File: `dags/topcv_dbt_dag.py`
 
 ```bash
 topcv-data-pipeline/
-|-- .env                                # Runtime environment variables (local)
-|-- .env.example                        # Environment template
-|-- .gitignore                          # Git ignore config
-|-- docker-compose.yml                  # Service definitions (Postgres, Airflow, Metabase)
-|-- Dockerfile                          # Python image for ETL tasks
-|-- Dockerfile.airflow                  # Airflow + dbt image
-|-- init.sql                            # Initial DB/schema setup
-|-- LICENSE                             # Project license
-|-- README.md                           # Documentation
-|-- requirements.txt                    # Python dependencies
-|
-|-- dags/
-|   |-- topcv_crawler_dag.py
-|   |-- topcv_dbt_dag.py
-|
-|-- data/
-|   |-- raw/
-|       |-- topcv_jobs_YYYYMMDD.csv     # daily raw data
-|
-|-- dbt_transform/
-|   |-- dbt_project.yml
-|   |-- profiles.yml
-|   |-- macros/
-|   |-- models/
-|   |-- snapshots/
-|
-|-- metabase/
-|   |-- sql/
-|       |-- 01_top_recruitment_keywords.sql
-|       |-- 02_salary_benchmark_by_experience.sql
-|       |-- 03_hotspots_by_location.sql
-|       |-- 04_company_size_distribution.sql
-|       |-- 05_top_hiring_companies_leaderboard.sql
-|       |-- 06_hiring_trend_over_time.sql|   
-|
-|-- src/
-|   |-- extract/
-|       |-- scraper.py
-|   |-- load/
-|       |-- load_data_to_postgres.py
-|   |-- metabase/
-|       |-- setup_metabase.py
-|
+├── .env                                # Runtime environment variables (local)
+├── .env.example                        # Environment template
+├── .gitignore                          # Git ignore config
+├── docker-compose.yml                  # Service definitions (Postgres, Airflow, Metabase)
+├── Dockerfile.airflow                  # Airflow + dbt image (also runs crawler/loader tasks)
+├── init.sql                            # Initial DB/schema setup
+├── LICENSE                             # Project license
+├── README.md                           # Documentation
+│
+├── dags/
+│   ├── topcv_crawler_dag.py
+│   └── topcv_dbt_dag.py
+│
+├── data/
+│   └── raw/
+│       └── topcv_jobs_YYYYMMDD.csv     # daily raw data
+│
+├── dbt_transform/
+│   ├── dbt_project.yml
+│   ├── profiles.yml
+│   ├── macros/
+│   ├── models/
+│   │   ├── staging/
+│   │   ├── intermediate/
+│   │   └── marts/
+│   └── snapshots/
+│
+├── img/
+│
+├── backup/   
+│
+├── metabase/
+│   └── sql/
+│       ├── 00_kpi_total_jobs.sql
+│       ├── 00_kpi_jobs_latest_crawl.sql
+│       ├── 00_kpi_total_companies.sql
+│       ├── 00_kpi_avg_salary.sql
+│       ├── 01_top_recruitment_keywords.sql
+│       ├── 02_salary_benchmark_by_experience.sql
+│       ├── 03_hotspots_by_location.sql
+│       ├── 04_company_size_distribution.sql
+│       ├── 05_top_hiring_companies_leaderboard.sql
+│       ├── 06_hiring_trend_over_time.sql
+│       ├── 07_company_industry_distribution.sql
+│       └── 08_job_appearance_status.sql
+│
+├── scripts/
+│   └── backup_postgres.sh
+│
+└── src/
+    ├── extract/
+    │   └── scraper.py
+    ├── load/
+    │   └── load_data_to_postgres.py
+    └── metabase/
+        └── setup_metabase.py
 
 ```
 
@@ -173,7 +190,7 @@ Update important values in `.env`:
 ### Step 2: Start Services
 
 ```bash
-docker-compose up -d
+docker-compose up -d --build
 ```
 
 Check containers:
@@ -208,16 +225,22 @@ Only supported method: **Docker + Airflow**
 
 Located in `metabase/sql`:
 
-![Metabase Dashboard Overview](img/05_metabase_dashboard_overview.png)
+![Dashboard Overview](img/06_dashboard_overview.png)
 
+![Keywords & Compensation](img/07_keywords_and_compensation.png)
+
+![Company Insights](img/08_company_insights.png)
+
+* KPI: total jobs collected (all-time), jobs in latest crawl, companies currently hiring, average market salary
 * Top recruitment keywords
 * Salary benchmark by experience
 * Hiring hotspots by location
 * Company size distribution
 * Top hiring companies leaderboard
-* Hiring trend over time
+* Hiring trend over time (30 days)
+* Company industry distribution
+* Job appearance status (present in latest crawl vs. not)
 
 ---
 ## 8) License
 - MIT License
-

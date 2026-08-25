@@ -22,26 +22,19 @@ with events as (
 job_dim as (
     select
         job_sk,
-        external_job_id
+        external_job_id,
+        dbt_valid_from,
+        dbt_valid_to
     from {{ ref('dim_job') }}
-    where dbt_valid_to is null
 ),
 
 company_dim as (
     select
         company_sk,
-        company_id
+        external_company_id,
+        dbt_valid_from,
+        dbt_valid_to
     from {{ ref('dim_company') }}
-    where dbt_valid_to is null
-),
-
-event_location as (
-    select
-        l.job_bk,
-        l.snapshot_ts,
-        min(l.location_name_norm) as location_name_norm
-    from {{ ref('int_job_locations') }} l
-    group by 1, 2
 ),
 
 base as (
@@ -52,23 +45,31 @@ base as (
         cast(to_char(e.deadline_date, 'YYYYMMDD') as integer) as deadline_date_id,
         jd.job_sk,
         cd.company_sk,
-        dl.location_id,
+        e.company_bk,
         e.salary_min,
         e.salary_max,
         e.salary_avg,
         e.salary_currency,
         e.snapshot_hash
     from events e
+
     left join job_dim jd
         on e.job_bk = jd.external_job_id
+       and e.snapshot_ts >= jd.dbt_valid_from
+       and e.snapshot_ts < coalesce(
+           jd.dbt_valid_to,
+           'infinity'::timestamp
+       )
+
     left join company_dim cd
-        on e.company_bk = cd.company_id
-    left join event_location el
-        on e.job_bk = el.job_bk
-       and e.snapshot_ts = el.snapshot_ts
-    left join {{ ref('dim_location') }} dl
-        on el.location_name_norm = dl.location_code
+        on e.company_bk = cd.external_company_id
+       and e.snapshot_ts >= cd.dbt_valid_from
+       and e.snapshot_ts < coalesce(
+           cd.dbt_valid_to,
+           'infinity'::timestamp
+       )
 )
+
 
 select
     job_bk,
@@ -76,7 +77,7 @@ select
     job_sk,
     date_id,
     company_sk,
-    location_id,
+    company_bk,
     deadline_date_id,
     salary_min,
     salary_max,

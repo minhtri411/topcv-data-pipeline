@@ -43,7 +43,7 @@ salary_parsed as (
     select
         *,
         case
-            when salary_text = '' or salary_text like '%thỏa thuận%' or salary_text like '%thu nhap canh tranh%' then null::numeric
+            when salary_text = '' or salary_text like '%thỏa thuận%' or salary_text like '%thu nhập cạnh tranh%' then null::numeric
             when salary_text like '%-%' then nullif(replace(regexp_replace(split_part(salary_text, '-', 1), '[^0-9\\.,]', '', 'g'), ',', ''), '')::numeric
             when salary_text like '%từ%' then nullif(replace(regexp_replace(salary_text, '[^0-9\\.,]', '', 'g'), ',', ''), '')::numeric
             when salary_text like '%trên%' then nullif(replace(regexp_replace(salary_text, '[^0-9\\.,]', '', 'g'), ',', ''), '')::numeric
@@ -51,7 +51,7 @@ salary_parsed as (
             else nullif(replace(regexp_replace(salary_text, '[^0-9\\.,]', '', 'g'), ',', ''), '')::numeric
         end as salary_min_number,
         case
-            when salary_text = '' or salary_text like '%thỏa thuận%' or salary_text like '%thu nhap canh tranh%' then null::numeric
+            when salary_text = '' or salary_text like '%thỏa thuận%' or salary_text like '%thu nhập cạnh tranh%' then null::numeric
             when salary_text like '%-%' then nullif(replace(regexp_replace(split_part(salary_text, '-', 2), '[^0-9\\.,]', '', 'g'), ',', ''), '')::numeric
             when salary_text like '%tới%' then nullif(replace(regexp_replace(salary_text, '[^0-9\\.,]', '', 'g'), ',', ''), '')::numeric
             when salary_text like '%trên%' then null::numeric
@@ -63,11 +63,18 @@ salary_parsed as (
 typed as (
     select
         {{ generate_surrogate_key(['job_url']) }} as job_bk,
-        {{ generate_surrogate_key([
-            "coalesce(company_url, '')",
-            "coalesce(company_name_full, '')",
-            "coalesce(company_website, '')"
-        ]) }} as company_bk,
+        
+        case
+            when company_url is not null and company_url != ''
+                then {{ generate_surrogate_key(['company_url']) }}
+            when coalesce(company_name_full, '') != '' or coalesce(company_website, '') != ''
+                then {{ generate_surrogate_key([
+                    "coalesce(company_name_full, '')",
+                    "coalesce(company_website, '')"
+                ]) }}
+            else null
+        end as company_bk,
+
         1::integer as source_id,
         snapshot_ts,
         job_url,
@@ -91,11 +98,11 @@ typed as (
         working_times,
         salary_currency,
         cast(
-            case when salary_currency = 'USD' then salary_min_number * salary_unit_multiplier * 26000
+            case when salary_currency = 'USD' then salary_min_number * salary_unit_multiplier * {{ var('usd_to_vnd_rate') }}
                  else salary_min_number * salary_unit_multiplier end as numeric(14,2)
         ) as salary_min,
         cast(
-            case when salary_currency = 'USD' then salary_max_number * salary_unit_multiplier * 26000
+            case when salary_currency = 'USD' then salary_max_number * salary_unit_multiplier * {{ var('usd_to_vnd_rate') }}
                  else salary_max_number * salary_unit_multiplier end as numeric(14,2)
         ) as salary_max
     from salary_parsed

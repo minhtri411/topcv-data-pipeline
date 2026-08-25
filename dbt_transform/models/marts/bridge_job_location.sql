@@ -1,11 +1,11 @@
-with tag_map as (
+with location_map as (
     select
-        t.job_bk,
-        t.snapshot_ts,
-        tg.tag_id
-    from {{ ref('int_job_tags') }} t
-    inner join {{ ref('dim_tag') }} tg
-        on t.tag_name_norm = tg.tag_name
+        l.job_bk,
+        l.snapshot_ts,
+        dl.location_id
+    from {{ ref('int_job_locations') }} l
+    inner join {{ ref('dim_location') }} dl
+        on l.location_name_norm = dl.location_code
 ),
 
 job_scd as (
@@ -19,8 +19,8 @@ job_scd as (
 
 select distinct
     j.job_sk,
-    m.tag_id
-from tag_map m
+    m.location_id
+from location_map m
 inner join job_scd j
     on m.job_bk = j.external_job_id
    and m.snapshot_ts >= j.dbt_valid_from

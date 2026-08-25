@@ -17,7 +17,7 @@ with snap as (
 )
 
 select
-    row_number() over (order by job_bk, dbt_valid_from)::bigint as job_sk,
+    ('x' || substr(md5(dbt_scd_id), 1, 16))::bit(64)::bigint as job_sk,
     dbt_scd_id,
     job_bk as external_job_id,
     source_id,

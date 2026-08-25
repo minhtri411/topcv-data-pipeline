@@ -2,9 +2,18 @@
 
 {{
     config(
-      target_schema='mart',
+      target_schema='snapshots',
       unique_key='job_bk',
-      strategy='timestamp',
+      strategy='check',
+      check_cols=[
+        'title',
+        'experience_raw',
+        'desc_mota',
+        'desc_yeucau',
+        'desc_quyenloi',
+        'working_addresses_raw',
+        'working_times'
+      ],
       updated_at='updated_at',
       invalidate_hard_deletes=True
     )

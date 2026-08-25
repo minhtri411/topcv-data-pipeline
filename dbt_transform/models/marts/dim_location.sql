@@ -5,7 +5,7 @@ with loc as (
 )
 
 select
-    row_number() over (order by location_name_norm)::integer as location_id,
+    ('x' || substr(md5(location_name_norm), 1, 16))::bit(64)::bigint as location_id,
     location_name_norm as location_code,
     initcap(location_name_norm) as location_name
 from loc

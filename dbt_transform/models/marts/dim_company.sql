@@ -16,9 +16,9 @@ with snap as (
 )
 
 select
-    row_number() over (order by company_bk, dbt_valid_from)::bigint as company_sk,
+    ('x' || substr(md5(dbt_scd_id), 1, 16))::bit(64)::bigint as company_sk,
     dbt_scd_id,
-    company_bk as company_id,
+    company_bk as external_company_id,
     company_name_full,
     company_url,
     company_website,

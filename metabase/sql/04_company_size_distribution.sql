@@ -15,9 +15,8 @@ clean_data AS (
               OR lower(c.company_size) LIKE '%3000+%' 
               OR lower(c.company_size) LIKE '%5000+%' 
               OR lower(c.company_size) LIKE '%10000+%' THEN '1000+ nhân viên'
-            ELSE 'Unknown' 
+            ELSE 'Không rõ' 
         END AS clean_company_size,
-        
         CASE 
             WHEN lower(c.company_size) LIKE '%1-9%' THEN 1
             WHEN lower(c.company_size) LIKE '%10-24%' THEN 2
@@ -30,17 +29,14 @@ clean_data AS (
               OR lower(c.company_size) LIKE '%10000+%' THEN 6
             ELSE 99 
         END AS sort_index
-        
     FROM raw_mart.fct_job_snapshot f
-    INNER JOIN raw_mart.dim_company c ON f.company_sk = c.company_sk
+    LEFT JOIN raw_mart.dim_company c ON f.company_sk = c.company_sk
     CROSS JOIN latest_date
     WHERE f.date_id = latest_date.max_date_id
 )
 SELECT 
-    clean_company_size AS company_size,
-    COUNT(DISTINCT job_sk) AS job_count,
-    ROUND(100.0 * COUNT(DISTINCT job_sk) / SUM(COUNT(DISTINCT job_sk)) OVER (), 2) AS hiring_share_percent,
-    sort_index 
+    clean_company_size AS "Quy mô doanh nghiệp",
+    COUNT(DISTINCT job_sk) AS "Số lượng tin"
 FROM clean_data
 GROUP BY clean_company_size, sort_index
 ORDER BY sort_index ASC;

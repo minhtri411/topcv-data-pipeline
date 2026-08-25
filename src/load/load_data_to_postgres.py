@@ -1,13 +1,3 @@
-"""
-Production-grade PostgreSQL loader with optimizations:
-1. COPY instead of pandas to_sql (10-100x faster)
-2. Transaction handling (atomicity, rollback on error)
-3. Duplicate prevention (upsert logic)
-4. Environment-based configuration
-5. Proper file selection (by date, not ctime)
-6. Bulk insert with proper schema
-"""
-
 import psycopg2
 from psycopg2 import sql, Error as PGError
 import pandas as pd
@@ -113,6 +103,36 @@ def load_data_with_copy(df: pd.DataFrame, conn, schema: str, table: str, executi
     if payload.empty:
         logger.warning("No valid rows (job_url is null/empty) to load")
         return 0
+
+    # Defensive truncation matching the VARCHAR limits in ensure_table_exists().
+    # A single malformed value (bad selector match, site markup change, etc.)
+    # must never be able to fail the whole COPY batch again.
+    varchar_limits = {
+        "job_url": 500,
+        "title": 500,
+        "company_url": 500,
+        "salary": 100,
+        "location": 200,
+        "experience": 200,
+        "deadline": 50,
+        "company_name_full": 500,
+        "company_website": 500,
+        "company_size": 100,
+        "company_followers": 100,
+        "company_industry": 200,
+    }
+    for column, max_len in varchar_limits.items():
+        if column not in payload.columns:
+            continue
+        series = payload[column].astype("string")
+        too_long = series.str.len() > max_len
+        n_too_long = int(too_long.fillna(False).sum())
+        if n_too_long > 0:
+            logger.warning(
+                f"Truncating {n_too_long} value(s) in column '{column}' "
+                f"exceeding {max_len} chars (likely a bad scrape match)"
+            )
+        payload[column] = series.where(~too_long.fillna(False), series.str.slice(0, max_len))
 
     if "crawled_at" in payload.columns:
         payload["crawled_at"] = pd.to_datetime(payload["crawled_at"], errors="coerce")

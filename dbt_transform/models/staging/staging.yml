@@ -16,9 +16,7 @@ models:
           - not_null
 
       - name: company_bk
-        description: "Business key of company generated from company_url/name/website"
-        tests:
-          - not_null
+        description: "Business key of company generated from company_url/name/website. NULL when the job has no company_url, company_name_full, or company_website at all (unknown company) — kept NULL rather than a shared placeholder hash so unrelated jobs are never merged into one fake company."
 
       - name: job_url
         description: "Normalized job URL"

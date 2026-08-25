@@ -1,7 +1,7 @@
 import json
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -122,6 +122,348 @@ def sync_database_schema(base_url: str, session_token: str, db_id: int) -> None:
     print(f"[OK] Triggered schema sync for database id={db_id}")
 
 
+CARD_MANIFEST: List[Dict[str, Any]] = [
+    # ===================== Tab 1: Tổng quan Thị trường =====================
+    {
+        "file": "00_kpi_total_jobs.sql",
+        "name": "Tổng số Tin đã thu thập (toàn bộ lịch sử)",
+        "display": "scalar",
+        "tab": "Tổng quan Thị trường",
+        "position": {"row": 0, "col": 0, "size_x": 6, "size_y": 2},
+    },
+    {
+        "file": "00_kpi_jobs_latest_crawl.sql",
+        "name": "Tin xuất hiện trong crawl gần nhất",
+        "display": "scalar",
+        "tab": "Tổng quan Thị trường",
+        "position": {"row": 0, "col": 6, "size_x": 6, "size_y": 2},
+    },
+    {
+        "file": "00_kpi_total_companies.sql",
+        "name": "Tổng số Doanh nghiệp đang tuyển",
+        "display": "scalar",
+        "tab": "Tổng quan Thị trường",
+        "position": {"row": 0, "col": 12, "size_x": 6, "size_y": 2},
+    },
+    {
+        "file": "00_kpi_avg_salary.sql",
+        "name": "Mức lương trung bình toàn thị trường",
+        "display": "scalar",
+        "tab": "Tổng quan Thị trường",
+        "position": {"row": 0, "col": 18, "size_x": 6, "size_y": 2},
+    },
+    {
+        "file": "06_hiring_trend_over_time.sql",
+        "name": "Xu hướng tuyển dụng và biến động lương (30 ngày gần nhất)",
+        "display": "combo",
+        "tab": "Tổng quan Thị trường",
+        "position": {"row": 2, "col": 0, "size_x": 24, "size_y": 6},
+        "viz_settings": {
+            "series_settings": {
+                "Số tin đang tuyển": {
+                    "display": "bar",
+                    "axis": "left",
+                    "color": "#A9D6A5",
+                },
+                "Lương trung bình (triệu VNĐ)": {
+                    "display": "line",
+                    "axis": "right",
+                    "color": "#2CA8B0",
+                },
+            },
+            "graph.show_values": True,
+            "graph.y_axis.auto_range": False,
+            "graph.y_axis.min": 0,
+        },
+    },
+    {
+        "file": "03_hotspots_by_location.sql",
+        "name": "Top khu vực có nhu cầu tuyển dụng Data cao nhất",
+        "display": "row",
+        "tab": "Tổng quan Thị trường",
+        "position": {"row": 8, "col": 0, "size_x": 12, "size_y": 6},
+        "viz_settings": {
+            "graph.show_values": True,
+            "series_settings": {"Số lượng tin": {"color": "#4C9A6B"}},
+        },
+    },
+    {
+        "file": "08_job_appearance_status.sql",
+        "name": "Tin còn xuất hiện ở lần crawl gần nhất (tín hiệu, không phải trạng thái đóng/mở)",
+        "display": "pie",
+        "tab": "Tổng quan Thị trường",
+        "position": {"row": 8, "col": 12, "size_x": 12, "size_y": 6},
+        "viz_settings": {
+            "pie.colors": {
+                "Còn xuất hiện": "#2ECC71",
+                "Không còn xuất hiện": "#BDC3C7"
+            }
+        }
+    },
+    # ============ Tab 2: Phân tích Từ khóa & Mức lương  ============
+    {
+        "file": "02_salary_benchmark_by_experience.sql",
+        "name": "Mặt bằng lương trung bình theo cấp bậc",
+        "display": "combo",
+        "tab": "Từ khóa & Mức lương",
+        "position": {"row": 0, "col": 0, "size_x": 24, "size_y": 6},
+        "viz_settings": {
+            "series_settings": {
+                "Số lượng tin": {
+                    "display": "bar",
+                    "axis": "right",
+                    "color": "#A9D6A5",
+                },
+                "Mức lương trung bình (triệu VNĐ)": {
+                    "display": "line",
+                    "axis": "left",
+                    "color": "#2CA8B0",
+                },
+                "Mức lương khởi điểm trung bình (triệu VNĐ)": {
+                    "display": "line",
+                    "axis": "left",
+                    "color": "#7FCDD1",
+                },
+                "Mức lương trần trung bình (triệu VNĐ)": {
+                    "display": "line",
+                    "axis": "left",
+                    "color": "#146A70",
+                },
+            },
+            "graph.y_axis.auto_range": False,
+            "graph.y_axis.min": 0,
+        },
+    },
+    {
+        "file": "01_top_recruitment_keywords.sql",
+        "name": "Top 20 từ khóa tuyển dụng phổ biến nhất",
+        "display": "row",
+        "tab": "Từ khóa & Mức lương",
+        "position": {"row": 6, "col": 0, "size_x": 24, "size_y": 10},
+        "viz_settings": {
+            "graph.show_values": True,
+            "series_settings": {"Số lượng tin": {"color": "#4C9A6B"}},
+        },
+    },
+    # ================ Tab 3: Phân tích Doanh nghiệp (Company Insights) ================
+    {
+        "file": "07_company_industry_distribution.sql",
+        "name": "Phân bố tin tuyển dụng theo lĩnh vực hoạt động",
+        "display": "row",
+        "tab": "Doanh nghiệp",
+        "position": {"row": 0, "col": 0, "size_x": 24, "size_y": 6},
+        "viz_settings": {
+            "graph.show_values": True,
+            "series_settings": {
+                "Số lượng tin": {"color": "#4C9A6B"},
+                "Không rõ": {"color": "#B0B0B0"},
+            },
+        },
+    },
+    {
+        "file": "04_company_size_distribution.sql",
+        "name": "Phân bố tin tuyển dụng theo quy mô doanh nghiệp",
+        "display": "bar",
+        "tab": "Doanh nghiệp",
+        "position": {"row": 6, "col": 0, "size_x": 24, "size_y": 6},
+        "viz_settings": {
+            "graph.show_values": True,
+            "series_settings": {
+                "Số lượng tin": {"color": "#4C9A6B"},
+                "Không rõ": {"color": "#B0B0B0"},
+            }
+        },
+    },
+    {
+        "file": "05_top_hiring_companies_leaderboard.sql",
+        "name": "Top 10 Doanh nghiệp tuyển dụng nhiều nhất",
+        "display": "table",
+        "tab": "Doanh nghiệp",
+        "position": {"row": 12, "col": 0, "size_x": 24, "size_y": 7},
+        "viz_settings": {
+            "table.column_widths": [40, None, None, None],
+            "column_settings": {
+                '["name","Số tin đang tuyển"]': {"show_mini_bar": True}
+            },
+        },
+    },
+]
+
+DASHBOARD_NAME = "TopCV Analytics Overview"
+
+
+def load_sql_manifest(sql_dir: str) -> None:
+    for entry in CARD_MANIFEST:
+        path = os.path.join(sql_dir, entry["file"])
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"SQL file listed in CARD_MANIFEST not found: {path}")
+        with open(path, "r", encoding="utf-8") as f:
+            entry["sql"] = f.read()
+
+
+def find_card_by_name(base_url: str, session_token: str, name: str) -> Optional[int]:
+    url = f"{base_url}/api/card"
+    headers = {"X-Metabase-Session": session_token}
+    r = requests.get(url, headers=headers, timeout=20)
+    r.raise_for_status()
+    for item in r.json():
+        if item.get("name") == name:
+            return int(item["id"])
+    return None
+
+
+def create_or_update_card(
+    base_url: str,
+    session_token: str,
+    db_id: int,
+    name: str,
+    sql: str,
+    display: str,
+    viz_settings: Optional[Dict[str, Any]] = None,
+) -> int:
+    headers = {"X-Metabase-Session": session_token}
+    payload = {
+        "name": name,
+        "dataset_query": {
+            "type": "native",
+            "native": {"query": sql},
+            "database": db_id,
+        },
+        "display": display,
+        "visualization_settings": viz_settings or {},
+    }
+
+    existing_id = find_card_by_name(base_url, session_token, name)
+    if existing_id is not None:
+        r = requests.put(f"{base_url}/api/card/{existing_id}", headers=headers, json=payload, timeout=30)
+        if not r.ok:
+            raise RuntimeError(f"Failed to update card '{name}': {r.status_code} {r.text}")
+        print(f"[OK] Updated card '{name}' (id={existing_id})")
+        return existing_id
+
+    r = requests.post(f"{base_url}/api/card", headers=headers, json=payload, timeout=30)
+    if not r.ok:
+        raise RuntimeError(f"Failed to create card '{name}': {r.status_code} {r.text}")
+    card_id = int(r.json()["id"])
+    print(f"[OK] Created card '{name}' (id={card_id})")
+    return card_id
+
+
+def get_dashboard_tabs(base_url: str, session_token: str, dashboard_id: int) -> Dict[str, int]:
+    headers = {"X-Metabase-Session": session_token}
+    r = requests.get(f"{base_url}/api/dashboard/{dashboard_id}", headers=headers, timeout=20)
+    r.raise_for_status()
+    return {t["name"]: int(t["id"]) for t in (r.json().get("tabs") or [])}
+
+
+def find_dashboard_by_name(base_url: str, session_token: str, name: str) -> Optional[int]:
+    url = f"{base_url}/api/dashboard"
+    headers = {"X-Metabase-Session": session_token}
+    r = requests.get(url, headers=headers, timeout=20)
+    r.raise_for_status()
+    for item in r.json():
+        if item.get("name") == name:
+            return int(item["id"])
+    return None
+
+
+def create_or_get_dashboard(base_url: str, session_token: str, name: str) -> int:
+    headers = {"X-Metabase-Session": session_token}
+    existing_id = find_dashboard_by_name(base_url, session_token, name)
+    if existing_id is not None:
+        print(f"[INFO] Dashboard '{name}' already exists (id={existing_id})")
+        r = requests.put(
+            f"{base_url}/api/dashboard/{existing_id}",
+            headers=headers,
+            json={"width": "full"},
+            timeout=30,
+        )
+        if not r.ok:
+            raise RuntimeError(f"Failed to set width on dashboard '{name}': {r.status_code} {r.text}")
+        return existing_id
+
+    r = requests.post(
+        f"{base_url}/api/dashboard",
+        headers=headers,
+        json={"name": name, "width": "full"},
+        timeout=30,
+    )
+    if not r.ok:
+        raise RuntimeError(f"Failed to create dashboard '{name}': {r.status_code} {r.text}")
+    dashboard_id = int(r.json()["id"])
+    print(f"[OK] Created dashboard '{name}' (id={dashboard_id}, width=full)")
+    return dashboard_id
+
+
+def set_dashboard_cards(
+    base_url: str,
+    session_token: str,
+    dashboard_id: int,
+    card_entries: List[Tuple[int, Dict[str, int], str]],
+) -> None:
+    """card_entries: list of (card_id, position, tab_name)."""
+    headers = {"X-Metabase-Session": session_token}
+
+    existing_tabs = get_dashboard_tabs(base_url, session_token, dashboard_id)
+    tab_names_in_order: List[str] = []
+    for _, _, tab_name in card_entries:
+        if tab_name not in tab_names_in_order:
+            tab_names_in_order.append(tab_name)
+
+    tab_id_by_name: Dict[str, int] = {}
+    tabs_payload = []
+    next_new_tab_id = -1
+    for name in tab_names_in_order:
+        tid = existing_tabs.get(name, next_new_tab_id)
+        if name not in existing_tabs:
+            next_new_tab_id -= 1
+        tab_id_by_name[name] = tid
+        tabs_payload.append({"id": tid, "name": name})
+
+    dashcards = [
+        {
+            "id": -(i + 1),  # negative placeholder id signals "new" to Metabase
+            "card_id": card_id,
+            "row": pos["row"],
+            "col": pos["col"],
+            "size_x": pos["size_x"],
+            "size_y": pos["size_y"],
+            "dashboard_tab_id": tab_id_by_name[tab_name],
+        }
+        for i, (card_id, pos, tab_name) in enumerate(card_entries)
+    ]
+    r = requests.put(
+        f"{base_url}/api/dashboard/{dashboard_id}/cards",
+        headers=headers,
+        json={"cards": dashcards, "tabs": tabs_payload},
+        timeout=30,
+    )
+    if not r.ok:
+        raise RuntimeError(f"Failed to set dashboard layout: {r.status_code} {r.text}")
+    print(f"[OK] Dashboard layout set ({len(dashcards)} cards across {len(tabs_payload)} tabs)")
+
+
+def provision_dashboard(base_url: str, session_token: str, db_id: int, sql_dir: str) -> None:
+    load_sql_manifest(sql_dir)
+
+    card_entries: List[Tuple[int, Dict[str, int], str]] = []
+    for entry in CARD_MANIFEST:
+        card_id = create_or_update_card(
+            base_url,
+            session_token,
+            db_id,
+            entry["name"],
+            entry["sql"],
+            entry["display"],
+            entry.get("viz_settings"),
+        )
+        card_entries.append((card_id, entry["position"], entry["tab"]))
+
+    dashboard_id = create_or_get_dashboard(base_url, session_token, DASHBOARD_NAME)
+    set_dashboard_cards(base_url, session_token, dashboard_id, card_entries)
+    print(f"[DONE] Dashboard '{DASHBOARD_NAME}' provisioned (id={dashboard_id})")
+
+
 def build_connection_details() -> Dict[str, Any]:
     return {
         "host": get_env("METABASE_TARGET_DB_HOST", get_env("DB_HOST", "postgres")),
@@ -211,6 +553,11 @@ def main() -> None:
         print(f"[INFO] Database already exists in Metabase id={db_id}")
 
     sync_database_schema(base_url, token, db_id)
+
+    sql_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "metabase", "sql")
+    sql_dir = os.getenv("METABASE_SQL_DIR", sql_dir)
+    provision_dashboard(base_url, token, db_id, sql_dir)
+
     print("[DONE] Metabase bootstrap finished")
     print(json.dumps({
         "metabase_url": base_url,

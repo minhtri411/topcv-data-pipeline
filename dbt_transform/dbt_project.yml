@@ -22,3 +22,6 @@ models:
       +materialized: table # Dashboard query
 
 packages-install-path: /tmp/dbt_packages
+
+vars:
+  usd_to_vnd_rate: 26000

@@ -12,7 +12,7 @@ with ranked as (
         snapshot_ts,
         row_number() over (
             partition by company_bk
-            order by snapshot_ts desc
+            order by snapshot_ts asc
         ) as rn
     from {{ ref('stg_topcv_jobs') }}
     where company_bk is not null

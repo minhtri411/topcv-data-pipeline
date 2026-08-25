@@ -23,7 +23,6 @@ PROJECT_DIR = _required_env("PROJECT_DIR")
 PYTHON_BIN = _required_env("PYTHON_BIN")
 SCRAPER_START_PAGE = _required_env("SCRAPER_START_PAGE")
 SCRAPER_MAX_PAGES = _required_env("SCRAPER_MAX_PAGES")
-SCRAPER_MAX_WORKERS = _required_env("SCRAPER_MAX_WORKERS")
 SCRAPER_PAGE_DELAY_MIN = _required_env("SCRAPER_PAGE_DELAY_MIN")
 SCRAPER_PAGE_DELAY_MAX = _required_env("SCRAPER_PAGE_DELAY_MAX")
 
@@ -155,19 +154,18 @@ with DAG(
             "PROJECT_DIR": PROJECT_DIR,
             "SCRAPER_START_PAGE": SCRAPER_START_PAGE,
             "SCRAPER_MAX_PAGES": SCRAPER_MAX_PAGES,
-            "SCRAPER_MAX_WORKERS": SCRAPER_MAX_WORKERS,
             "SCRAPER_PAGE_DELAY_MIN": SCRAPER_PAGE_DELAY_MIN,
             "SCRAPER_PAGE_DELAY_MAX": SCRAPER_PAGE_DELAY_MAX,
         },
         append_env=True,
         retries=0,
-        execution_timeout=timedelta(hours=2),
+        execution_timeout=timedelta(hours=4),
     )
 
     validate = PythonOperator(
         task_id="validate_data",
         python_callable=validate_data,
-        retries=1,
+        retries=0,
         execution_timeout=timedelta(minutes=5),
     )
 

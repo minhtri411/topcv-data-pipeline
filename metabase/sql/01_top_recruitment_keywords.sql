@@ -1,6 +1,5 @@
 -- Top 20 Từ khóa/Kỹ năng được săn đón nhất
 WITH latest_date AS (
-    -- Lấy ngày gần nhất có dữ liệu để chống lỗi "trắng biểu đồ"
     SELECT MAX(date_id) AS max_date_id 
     FROM raw_mart.fct_job_snapshot
 ),
@@ -15,10 +14,9 @@ keyword_data AS (
     WHERE f.date_id = latest_date.max_date_id
 )
 SELECT 
-    tag_name AS keyword_name,
-    COUNT(DISTINCT job_sk) AS job_count,
-    ROUND(100.0 * COUNT(DISTINCT job_sk) / SUM(COUNT(DISTINCT job_sk)) OVER (), 2) AS appearance_percentage
+    tag_name AS "Từ khóa / Kỹ năng",
+    COUNT(DISTINCT job_sk) AS "Số lượng tin"
 FROM keyword_data
 GROUP BY tag_name
-ORDER BY job_count DESC
+ORDER BY COUNT(DISTINCT job_sk) DESC
 LIMIT 20;

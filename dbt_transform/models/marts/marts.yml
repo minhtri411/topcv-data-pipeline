@@ -27,7 +27,7 @@ models:
         tests:
           - unique
           - not_null
-      - name: company_id
+      - name: external_company_id
         description: "Company business key"
         tests:
           - not_null
@@ -99,7 +99,7 @@ models:
           - not_null
 
   - name: bridge_job_tags
-    description: "Bridge table mapping job SCD2 rows to tags"
+    description: "Bridge table mapping jobs to tags, resolved to the job_sk valid at each tag observation's snapshot_ts (historically accurate across SCD2 changes, not just the current job version)"
     tests:
       - unique_combination_of_columns:
           combination_of_columns:
@@ -120,6 +120,29 @@ models:
           - relationships:
               to: ref('dim_tag')
               field: tag_id
+
+  - name: bridge_job_location
+    description: "Bridge table mapping jobs to locations (a job can be posted at multiple addresses), resolved to the job_sk valid at each location observation's snapshot_ts"
+    tests:
+      - unique_combination_of_columns:
+          combination_of_columns:
+            - job_sk
+            - location_id
+    columns:
+      - name: job_sk
+        description: "Foreign key to dim_job"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_job')
+              field: job_sk
+      - name: location_id
+        description: "Foreign key to dim_location"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_location')
+              field: location_id
 
   - name: fct_job_snapshot
     description: "Fact snapshot at grain (job_bk, snapshot_ts)"
@@ -152,12 +175,6 @@ models:
           - relationships:
               to: ref('dim_company')
               field: company_sk
-      - name: location_id
-        description: "Foreign key to dim_location"
-        tests:
-          - relationships:
-              to: ref('dim_location')
-              field: location_id
       - name: date_id
         description: "Foreign key to dim_date"
         tests:
